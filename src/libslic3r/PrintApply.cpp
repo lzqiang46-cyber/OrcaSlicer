@@ -1,3 +1,4 @@
+#include "FilamentNozzleMap.hpp"
 #include "MixedFilament.hpp"
 #include "Model.hpp"
 #include "Print.hpp"
@@ -256,18 +257,29 @@ static t_config_option_keys print_config_diffs(
                                                                                        new_full_config.option(filament_prefix + opt_key);
         if (opt_new_filament != nullptr && ! opt_new_filament->is_nil()) {
             // An extruder retract override is available at some of the filament presets.
-            bool overriden = opt_new->overriden_by(opt_new_filament);
+            const bool override_gated = (opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
+                                     && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament; // ugly code, remove it later if firmware supports
+            bool overriden = ! opt_new_filament->is_nil();
             if (overriden || !config_options_equal(opt_old, opt_new)) {
+                // Machine index inherited by each nil position of the filament vector:
+                // the extruder mapped to the position's filament slot.
+                const auto         *filament     = static_cast<const ConfigOptionVectorBase*>(opt_new_filament);
+                const auto         *machine      = static_cast<const ConfigOptionVectorBase*>(opt_new);
+                const size_t        machine_size = machine->size();
+                std::vector<size_t> fallback_indices;
+                fallback_indices.reserve(filament->size());
+                for (size_t pos = 0; pos < filament->size(); ++pos) {
+                    const size_t extruder = FilamentNozzleMap::physical_extruder_for_variant_position(new_full_config, pos);
+                    fallback_indices.emplace_back(machine_size == 0 ? 0 : std::min(extruder, machine_size - 1));
+                }
                 auto opt_copy = opt_new->clone();
-                if (!((opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
-                    && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament)) // ugly code, remove it later if firmware supports
-                    opt_copy->apply_override(opt_new_filament);
+                if (! override_gated)
+                    opt_copy->apply_override(opt_new_filament, &fallback_indices);
                 bool changed = !config_options_equal(opt_old, opt_copy);
                 if (changed)
                     print_diff.emplace_back(opt_key);
                 if (changed || overriden) {
-                    if ((opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
-                        && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament)
+                    if (override_gated)
                         continue;
                     // filament_overrides will be applied to the placeholder parser, which layers these parameters over full_print_config.
                     filament_overrides.set_key_value(opt_key, opt_copy);

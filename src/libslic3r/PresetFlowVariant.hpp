@@ -5,7 +5,7 @@
 namespace Slic3r {
 
 // Read the per-extruder nozzle flow type from a printer preset; missing or invalid values are standard.
-FilamentVolumeType get_nozzle_volume_type(const ConfigBase &printer_config, unsigned int extruder_id = 0);
+FilamentVolumeType get_nozzle_volume_type(const ConfigOptionResolver &printer_config, unsigned int extruder_id = 0);
 
 // Resolve an index inside a single preset's variant array. Unlike get_config_idx(), this helper
 // does not expect filament_flow_step_size or a composed multi-filament config.

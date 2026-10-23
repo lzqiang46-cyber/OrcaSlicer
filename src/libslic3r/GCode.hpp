@@ -659,7 +659,7 @@ private:
 
     // Snapmaker: flow variant — read a process-domain vector option
     template<typename VectorOption>
-    auto process_flow_value(const VectorOption &opt) const -> decltype(opt.get_at(0))
+    auto process_flow_value(const VectorOption &opt) const -> std::decay_t<decltype(opt.get_at(0))>
     {
         return get_value_at(m_config, opt, ConfigFlowDomain::Process,
                             m_writer.extruder() != nullptr ? m_writer.extruder()->id() : 0);

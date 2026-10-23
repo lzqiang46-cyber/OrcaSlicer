@@ -286,7 +286,8 @@ public:
     	return *this != *rhs;
     }
     // Apply an override option, possibly a nullable one.
-    virtual bool 				apply_override(const ConfigOption *rhs) {
+    // Snapmaker: filament-nozzle map
+    virtual bool 				apply_override(const ConfigOption *rhs, const std::vector<size_t> * /*fallback_indices*/ = nullptr) {
     	if (*this == *rhs)
     		return false;
     	*this = *rhs;
@@ -521,7 +522,7 @@ public:
     	return false;
     }
     // Apply an override option, possibly a nullable one.
-    bool apply_override(const ConfigOption *rhs) override {
+    bool apply_override(const ConfigOption *rhs, const std::vector<size_t> *fallback_indices = nullptr) override {
         if (this->nullable())
         	throw ConfigurationError("Cannot override a nullable ConfigOption.");
         if (rhs->type() != this->type())
@@ -540,19 +541,25 @@ public:
         if (cnt < 1)
             return false;
 
+        // Snapmaker: filament-nozzle map
+        const std::vector<T> machine_values = this->values;
+
         if (this->values.empty())
             this->values.resize(rhs_vec->size());
         else
             this->values.resize(rhs_vec->size(), this->values.front());
 
     	bool modified = false;
-        auto default_value = this->values[0];
         for (size_t i = 0; i < rhs_vec->size(); ++i) {
             if (!rhs_vec->is_nil(i)) {
                 this->values[i] = rhs_vec->values[i];
                 modified        = true;
             } else {
-                this->values[i] = default_value;
+                // nil: inherit the machine value at the fallback index (legacy: values[0]).
+                size_t fallback_idx = 0;
+                if (fallback_indices != nullptr && i < fallback_indices->size() && ! machine_values.empty())
+                    fallback_idx = (*fallback_indices)[i] < machine_values.size() ? (*fallback_indices)[i] : machine_values.size() - 1;
+                this->values[i] = machine_values.empty() ? T{} : machine_values[fallback_idx];
             }
         }
         return modified;

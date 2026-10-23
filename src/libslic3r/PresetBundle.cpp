@@ -214,6 +214,8 @@ static std::vector<std::string> s_project_options {
     "nozzle_volume_type",
     "filament_grouping_mode",
     "flush_multiplier",
+    // Snapmaker: filament-to-nozzle (physical extruder) mapping, one entry per filament slot
+    "filament_nozzle_map",
     // Mixed filament / local-Z settings
     "mixed_filament_gradient_mode",
     "mixed_filament_height_lower_bound",

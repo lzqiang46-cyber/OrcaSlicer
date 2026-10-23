@@ -362,7 +362,9 @@ enum RetractLiftEnforceType {
 enum class ConfigFlowDomain {
     Filament,   // *_flow_support key: filament_flow_support
     Process,    // *_flow_support key: process_flow_support
-    Printer     // *_flow_support key: printer_flow_support
+    Printer,    // *_flow_support key: printer_flow_support
+    PhysicalExtruder,
+    Default
 };
 
 constexpr const char* FLOW_MODE_STANDARD  = "standard";
@@ -398,14 +400,115 @@ bool is_process_flow_variant_option(const std::string &key);
 const std::vector<std::string>& machine_flow_variant_options();
 bool is_machine_flow_variant_option(const std::string &key);
 
-size_t get_config_idx(const ConfigBase &config, ConfigFlowDomain domain, unsigned int filament_id = 0);
+size_t get_config_idx(const ConfigOptionResolver &config, ConfigFlowDomain domain, unsigned int filament_id = 0);
+
+ConfigFlowDomain derived_domain(const t_config_option_key &opt_key);
 
 template<typename VectorOption>
-inline auto get_value_at(const ConfigBase &config, const VectorOption &opt, ConfigFlowDomain domain, unsigned int filament_id = 0)
+inline auto get_value_at(const ConfigOptionResolver &config, const VectorOption &opt, ConfigFlowDomain domain, unsigned int filament_id = 0)
     -> decltype(opt.get_at(0))
 {
     return opt.get_at(get_config_idx(config, domain, filament_id));
 }
+
+template<typename VectorOption>
+inline auto get_value_at(const ConfigOptionResolver &config, const VectorOption &opt, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+    -> decltype(opt.get_at(0))
+{
+    return opt.get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
+}
+
+template<typename VectorOption>
+inline auto get_value_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const VectorOption *opt = config.option<VectorOption>(opt_key);
+    if (opt == nullptr) {
+        assert(opt != nullptr);
+        return decltype(opt->get_at(0)){};
+    }
+    return opt->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
+}
+
+// Typed wrappers over the key-driven form: cover the vector option types without a template
+// argument; the domain is derived from the key.
+inline double get_float_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const ConfigOption *opt = config.option(opt_key);
+    if (opt == nullptr) {
+        assert(opt != nullptr);
+        return 0.;
+    }
+    const size_t idx = get_config_idx(config, derived_domain(opt_key), filament_id);
+    switch (opt->type()) {
+    case coFloats:   return static_cast<const ConfigOptionFloats *>(opt)->get_at(idx);
+    case coPercents: return static_cast<const ConfigOptionPercents *>(opt)->get_at(idx);
+    case coInts:     return static_cast<const ConfigOptionInts *>(opt)->get_at(idx);
+    default:         assert(false); return 0.;
+    }
+}
+
+inline int get_int_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const ConfigOption *opt = config.option(opt_key);
+    if (opt == nullptr) {
+        assert(opt != nullptr);
+        return 0;
+    }
+    const size_t idx = get_config_idx(config, derived_domain(opt_key), filament_id);
+    switch (opt->type()) {
+    case coInts:  return static_cast<const ConfigOptionInts *>(opt)->get_at(idx);
+    case coEnums: return static_cast<const ConfigOptionEnumsGeneric *>(opt)->get_at(idx);
+    default:      assert(false); return 0;
+    }
+}
+
+inline bool get_bool_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const ConfigOption *opt = config.option(opt_key);
+    if (opt == nullptr || opt->type() != coBools) {
+        assert(opt != nullptr && opt->type() == coBools);
+        return false;
+    }
+    return static_cast<const ConfigOptionBools *>(opt)->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
+}
+
+inline std::string get_string_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const ConfigOption *opt = config.option(opt_key);
+    if (opt == nullptr || opt->type() != coStrings) {
+        assert(opt != nullptr && opt->type() == coStrings);
+        return std::string{};
+    }
+    return static_cast<const ConfigOptionStrings *>(opt)->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
+}
+
+inline Vec2d get_point_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const ConfigOption *opt = config.option(opt_key);
+    if (opt == nullptr || opt->type() != coPoints) {
+        assert(opt != nullptr && opt->type() == coPoints);
+        return Vec2d::Zero();
+    }
+    // Vec2d value initialization leaves Eigen coefficients uninitialized, hence the explicit
+    // Vec2d::Zero() empty fallback.
+    const auto *points = static_cast<const ConfigOptionPoints *>(opt);
+    if (points->values.empty()) {
+        assert(!points->values.empty());
+        return Vec2d::Zero();
+    }
+    return points->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
+}
+
+inline FloatOrPercent get_float_or_percent_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
+{
+    const ConfigOption *opt = config.option(opt_key);
+    if (opt == nullptr || opt->type() != coFloatsOrPercents) {
+        assert(opt != nullptr && opt->type() == coFloatsOrPercents);
+        return FloatOrPercent{0., false};
+    }
+    return static_cast<const ConfigOptionFloatsOrPercents *>(opt)->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
+}
+
 
 // end Snapmaker: flow variant------------------------------------------------------------------------
 
@@ -1360,6 +1463,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionStrings,             process_flow_support))
     ((ConfigOptionStrings,             printer_flow_support))
     ((ConfigOptionInts,                filament_flow_step_size))
+    ((ConfigOptionInts,                filament_nozzle_map))
 )
 
 // This object is mapped to Perl as Slic3r::Config::Print.
