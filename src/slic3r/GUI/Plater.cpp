@@ -1,6 +1,7 @@
 #include "Plater.hpp"
 #include "MixedFilamentDialog.hpp"
 #include "MixedFilamentBatchDialog.hpp"
+#include "FilamentNozzleMapDialog.hpp"
 #include "MixedGradientSelector.hpp"
 #include "MixedColorMatchPanel.hpp"
 #include "MixedFilamentBadge.hpp"
@@ -3040,6 +3041,16 @@ Sidebar::Sidebar(Plater *parent)
         set_progress(100);
     });
     bSizer39->Add(p->m_btn_batch_match, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
+
+    // Snapmaker: filament-nozzle mapping (料箱耗材管理) entry, next to Color Mixing Match.
+    Button* nozzle_map_btn = new Button(p->m_panel_filament_title, _L("Nozzle Mapping"));
+    nozzle_map_btn->SetStyle(ButtonStyle::Regular, ButtonType::Compact);
+    nozzle_map_btn->SetToolTip(_L("Assign each filament slot to the physical extruder (nozzle) that feeds it."));
+    nozzle_map_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        FilamentNozzleMapDialog dlg(this);
+        dlg.ShowModal();
+    });
+    bSizer39->Add(nozzle_map_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
 
     ams_btn = new ScalableButton(p->m_panel_filament_title, wxID_ANY, "ams_fila_sync", wxEmptyString, wxDefaultSize, wxDefaultPosition,
                                                  wxBU_EXACTFIT | wxNO_BORDER, false, 16); // ORCA match icon size with other icons as 16x16

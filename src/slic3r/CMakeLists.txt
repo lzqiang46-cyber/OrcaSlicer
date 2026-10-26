@@ -344,6 +344,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/OAuthDialog.hpp
     GUI/MixedFilamentDialog.cpp
     GUI/MixedFilamentDialog.hpp
+    GUI/FilamentNozzleMapDialog.cpp
+    GUI/FilamentNozzleMapDialog.hpp
     GUI/MixedFilamentBatchDialog.cpp
     GUI/MixedFilamentBatchDialog.hpp
     GUI/MixedGradientSelector.hpp

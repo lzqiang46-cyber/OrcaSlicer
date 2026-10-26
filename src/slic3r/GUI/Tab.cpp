@@ -2,6 +2,7 @@
 //#include "slic3r/Utils/Serial.hpp"
 #include "Tab.hpp"
 #include "PresetHints.hpp"
+#include "libslic3r/FilamentNozzleMap.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PresetFlowVariant.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -3972,9 +3973,12 @@ PageShp TabFilament::add_filament_overrides_page()
             auto check_box = new ::CheckBox(parent); // ORCA modernize checkboxes
             check_box->Bind(wxEVT_TOGGLEBUTTON, [this, optgroup_wk, opt_key](wxCommandEvent& evt) {
                 const bool is_checked = evt.IsChecked();
+                // Snapmaker: filament-nozzle map -- index the filament override vector by the
+                // filament slot currently being edited (TabPresetComboBox::m_filament_idx).
+                const int filament_idx = std::max(0, get_combo_box()->get_filament_idx());
                 const int option_index = is_filament_flow_variant_option(opt_key)
                     ? int(flow_variant_view_index())
-                    : 0;
+                    : filament_idx;
                 if (auto optgroup_sh = optgroup_wk.lock(); optgroup_sh) {
                     if (Field *field = optgroup_sh->get_fieldc(opt_key, option_index); field != nullptr) {
                         field->toggle(is_checked);
@@ -3986,7 +3990,11 @@ PageShp TabFilament::add_filament_overrides_page()
                         else {
                             const std::string printer_opt_key = opt_key.substr(strlen("filament_"));
                             const auto printer_config = m_preset_bundle->printers.get_edited_preset().config;
-                            const boost::any printer_config_value = optgroup_sh->get_config_value(printer_config, printer_opt_key, 0);
+                            // Show the machine value of the extruder mapped to this filament
+                            // (map from the project config, extruder count from the printer).
+                            const int extruder_idx = int(FilamentNozzleMap::physical_extruder_for_filament(
+                                m_preset_bundle->project_config, printer_config, unsigned(filament_idx)));
+                            const boost::any printer_config_value = optgroup_sh->get_config_value(printer_config, printer_opt_key, extruder_idx);
                             field->update_na_value(printer_config_value);
                             const ConfigOptionDef *option_def = m_config->def()->get(opt_key);
                             if (option_def != nullptr &&
@@ -4078,8 +4086,13 @@ void TabFilament::update_filament_overrides_page(const DynamicPrintConfig* print
                                         };
 
     const int flow_index = int(flow_variant_view_index());
-    const int extruder_idx = 0; // #ys_FIXME
-    const int retract_length_index = is_filament_flow_variant_option("filament_retraction_length") ? flow_index : extruder_idx;
+    // Snapmaker: filament-nozzle map 
+    const int filament_idx = std::max(0, get_combo_box()->get_filament_idx());
+    // nozzle_diameter lives in the printer preset, the map in the project config: split sources.
+    const int extruder_idx = int(FilamentNozzleMap::physical_extruder_for_filament(
+        m_preset_bundle->project_config, *printers_config, unsigned(filament_idx)));
+
+    const int retract_length_index = is_filament_flow_variant_option("filament_retraction_length") ? flow_index : 0;
 
     const ConfigOptionVectorBase* retract_length =
         dynamic_cast<const ConfigOptionVectorBase*>(m_config->option("filament_retraction_length"));
@@ -4088,7 +4101,7 @@ void TabFilament::update_filament_overrides_page(const DynamicPrintConfig* print
 
     for (const std::string& opt_key : opt_keys)
     {
-        const int option_index = is_filament_flow_variant_option(opt_key) ? flow_index : extruder_idx;
+        const int option_index = is_filament_flow_variant_option(opt_key) ? flow_index : 0;
         bool is_checked = opt_key=="filament_retraction_length" ? true : have_retract_length;
         m_overrides_options[opt_key]->Enable(is_checked);
 
@@ -4111,7 +4124,7 @@ void TabFilament::update_filament_overrides_page(const DynamicPrintConfig* print
             bool machine_enabled = machine_enabled_level == LongRectrationLevel::EnableFilament;
             const int long_retraction_index = is_filament_flow_variant_option("filament_long_retractions_when_cut")
                 ? flow_index
-                : extruder_idx;
+                : 0;
             bool filament_enabled = m_config->option<ConfigOptionBools>("filament_long_retractions_when_cut")->values[long_retraction_index] == 1;
             toggle_line(opt_key, filament_enabled && machine_enabled);
             field->toggle(is_checked && filament_enabled && machine_enabled);
