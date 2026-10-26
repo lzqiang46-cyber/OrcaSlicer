@@ -3285,6 +3285,14 @@ void SSWCP_MachineOption_Instance::on_finish_filament_mapping_custom_flow_regrou
         return;
     wxGetApp().CallAfter([]() {
         wxWindow *parent = static_cast<wxWindow *>(wxGetApp().mainframe);
+        if (GUI::FlowType::filament_nozzle_map_active()) {
+            // With an active filament-nozzle map the flow types follow the map and the
+            // grouping dialog has nothing to edit; proceed straight to slicing.
+            GUI::FlowType::sync_filament_volume_types_from_nozzle_map();
+            if (wxGetApp().mainframe)
+                wxGetApp().mainframe->start_slice();
+            return;
+        }
         GUI::FilamentGroupDialog dlg(parent);
         // Confirming the custom flow regrouping proceeds straight to slicing (the
         // same action as the slice button); cancelling changes nothing.

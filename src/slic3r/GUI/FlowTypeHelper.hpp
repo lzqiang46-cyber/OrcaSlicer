@@ -16,6 +16,10 @@ namespace Slic3r { namespace GUI { namespace FlowType {
 // pieces of state: changing one never rewrites another. The only shared gate is
 // printer_supports_high_flow() -- whether the edited printer preset declares
 // "high_flow" in printer_flow_support at all.
+//
+// Exception: an active filament_nozzle_map pins every filament's flow type to the
+// flow type of the nozzle (physical extruder) it maps to -- see
+// filament_nozzle_map_active() / sync_filament_volume_types_from_nozzle_map().
 
 // True when the edited printer preset declares "high_flow" in printer_flow_support.
 bool printer_supports_high_flow();
@@ -71,6 +75,11 @@ void apply_custom_mapping(const std::vector<FilamentVolumeType> &mapping);
 // standard mode with mixed nozzles everything falls back to standard. No-op when the
 // mapping already matches. Only meaningful outside the custom+mixed case.
 void sync_filament_volume_types_for_slice();
+
+// Snapmaker: filament-nozzle map.
+bool filament_nozzle_map_active();
+
+void sync_filament_volume_types_from_nozzle_map();
 
 }}} // namespace Slic3r::GUI::FlowType
 

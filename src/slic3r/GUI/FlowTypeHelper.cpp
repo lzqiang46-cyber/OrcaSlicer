@@ -3,7 +3,9 @@
 #include "GUI_App.hpp"
 #include "Plater.hpp"
 
+#include "libslic3r/FilamentNozzleMap.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/PresetFlowVariant.hpp"
 #include "libslic3r/PrintConfig.hpp"
 
 #include <boost/algorithm/string.hpp>
@@ -180,6 +182,35 @@ void apply_custom_mapping(const std::vector<FilamentVolumeType> &mapping)
 {
     wxGetApp().preset_bundle->set_filament_volume_types(mapping);
     notify_plater();
+}
+
+bool filament_nozzle_map_active()
+{
+    return wxGetApp().preset_bundle != nullptr &&
+           FilamentNozzleMap::is_active(wxGetApp().preset_bundle->project_config);
+}
+
+void sync_filament_volume_types_from_nozzle_map()
+{
+    PresetBundle &bundle = *wxGetApp().preset_bundle;
+    if (!FilamentNozzleMap::is_active(bundle.project_config))
+        return;
+
+    // Mirror flow_type_of() (PrintConfig.cpp): a filament's flow type is the flow type
+    // of the nozzle (physical extruder) the map routes it to. The map and nozzle_volume_type
+    // live in the project config while the extruder count comes from the printer preset,
+    // hence the split-source overload.
+    const ConfigBase &printer_config = bundle.printers.get_edited_preset().config;
+    const size_t      num_filaments  = bundle.filament_presets.size();
+    std::vector<FilamentVolumeType> target(std::max<size_t>(num_filaments, 1), fvtStandard);
+    for (size_t i = 0; i < num_filaments; ++i)
+        target[i] = get_nozzle_volume_type(
+            bundle.project_config,
+            FilamentNozzleMap::physical_extruder_for_filament(bundle.project_config, printer_config, unsigned(i)));
+
+    if (bundle.get_filament_volume_types() == target)
+        return; // already mirroring the map; skip the pointless slice invalidation
+    apply_custom_mapping(target);
 }
 
 void sync_filament_volume_types_for_slice()
