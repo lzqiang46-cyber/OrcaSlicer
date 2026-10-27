@@ -1,6 +1,7 @@
 #include "FilamentNozzleMap.hpp"
 
 #include <algorithm>
+#include <cassert>
 
 namespace Slic3r {
 
@@ -42,8 +43,25 @@ unsigned int resolve_filament(const ConfigOptionInts *mapping, size_t num_extrud
 
 size_t physical_extruder_count(const ConfigOptionResolver &config)
 {
-    const ConfigOptionFloats *nozzle_diameter = floats_option(config, "nozzle_diameter");
-    return nozzle_diameter == nullptr ? 1 : std::max<size_t>(1, nozzle_diameter->values.size());
+    // Primary source: nozzle_diameter (printer hardware key). It is absent from GCodeConfig --
+    // the config the GCode writer / Extruder per-filament lookups run against -- where the
+    // equivalent carrier of the extruder count is nozzle_volume_type: one entry per physical
+    // nozzle, also part of GCodeConfig, and never variant-expanded (unlike the retract arrays,
+    // which the filament-override merge can resize). Returning 1 here would clamp every map
+    // entry >= 1 to extruder 0 in resolve_filament().
+    if (const ConfigOptionFloats *nozzle_diameter = floats_option(config, "nozzle_diameter");
+        nozzle_diameter != nullptr && !nozzle_diameter->values.empty())
+        return std::max<size_t>(1, nozzle_diameter->values.size());
+    if (const ConfigOption *volumes = config.option("nozzle_volume_type");
+        volumes != nullptr && volumes->type() == coEnums) {
+        const auto *types = static_cast<const ConfigOptionEnumsGeneric *>(volumes);
+        if (!types->values.empty())
+            return types->values.size();
+    }
+    assert(false);
+    BOOST_LOG_TRIVIAL(error) << "physical_extruder_count: neither nozzle_diameter nor nozzle_volume_type "
+                                "available in config, assuming 1 extruder";
+    return 1;
 }
 
 size_t filament_count(const ConfigOptionResolver &config)
