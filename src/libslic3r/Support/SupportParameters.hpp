@@ -181,7 +181,7 @@ struct SupportParameters {
             assert(slicing_params.raft_layers() == 0);
         }
 
-	    const auto     nozzle_diameter = print_config.nozzle_diameter.get_at(object_config.support_interface_filament - 1);
+	    const auto     nozzle_diameter = get_float_at(object.print()->config(), "nozzle_diameter", unsigned(object_config.support_interface_filament - 1));
         const coordf_t extrusion_width = object_config.line_width.get_abs_value(nozzle_diameter);
         support_extrusion_width        = object_config.support_line_width.get_abs_value(nozzle_diameter);
         support_extrusion_width        = support_extrusion_width > 0 ? support_extrusion_width : extrusion_width;

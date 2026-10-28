@@ -16226,9 +16226,8 @@ PlateBBoxData Plater::priv::generate_first_layer_bbox()
     bboxdata.first_extruder = print->get_tool_ordering().first_extruder();
     bboxdata.bed_type       = bed_type_to_gcode_string(print->config().curr_bed_type.value);
     // get nozzle diameter
-    auto opt_nozzle_diameters = print->config().option<ConfigOptionFloats>("nozzle_diameter");
-    if (opt_nozzle_diameters != nullptr)
-        bboxdata.nozzle_diameter = float(opt_nozzle_diameters->get_at(bboxdata.first_extruder));
+    if (print->config().option<ConfigOptionFloats>("nozzle_diameter") != nullptr)
+        bboxdata.nozzle_diameter = float(get_float_at(print->config(), "nozzle_diameter", bboxdata.first_extruder));
     //PrintObjectPtrs objects;
     //if (this->printer_technology == ptFFF) {
     //    objects = this->background_process.m_fff_print->objects().vector();

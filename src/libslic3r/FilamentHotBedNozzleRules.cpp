@@ -499,11 +499,9 @@ bool FilamentHotBedNozzleRules::evaluate_nozzle_filament_mismatch_detail(const P
 
     for (unsigned int fid : used_filament_indices) {
         std::string        nozzle_key_fid;
-        unsigned int       nd_idx = 0;
         double             cur_mm = 0.;
         if (!cfg.nozzle_diameter.empty()) {
-            nd_idx         = std::min(fid, unsigned(cfg.nozzle_diameter.size() - 1));
-            cur_mm         = cfg.nozzle_diameter.get_at(nd_idx);
+            cur_mm         = get_float_at(cfg, "nozzle_diameter", fid);
             nozzle_key_fid = nozzle_diameter_to_filament_rule_key(cur_mm);
         }
         if (nozzle_key_fid.empty())

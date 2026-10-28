@@ -957,7 +957,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
 				//get locked region param
 				if (params.pattern == ipLockedZag){
 					const PrintObject *object = layerm.layer()->object();
-					auto nozzle_diameter = float(object->print()->config().nozzle_diameter.get_at(effective_extruder - 1));
+					auto nozzle_diameter = float(get_float_at(object->print()->config(), "nozzle_diameter", unsigned(effective_extruder - 1)));
 					Flow skin_flow = params.bridge ? params.flow : Flow::new_from_config_width(extrusion_role, region_config.skin_infill_line_width, nozzle_diameter, float((surface.thickness == -1) ? layer.height : surface.thickness));
 					//add skin flow
 					append_flow_param(lock_param.skin_flow_params, skin_flow, surface.expolygon);
@@ -1586,7 +1586,7 @@ void Layer::make_ironing()
 
 		// Create the ironing extrusions for regions <i, j)
 		ExPolygons ironing_areas;
-		double nozzle_dmr = this->object()->print()->config().nozzle_diameter.get_at(ironing_params.extruder - 1);
+		double nozzle_dmr = get_float_at(this->object()->print()->config(), "nozzle_diameter", unsigned(ironing_params.extruder - 1));
 		if (ironing_params.just_infill) {
 			//TODO just_infill is currently not used.
 			// Just infill.

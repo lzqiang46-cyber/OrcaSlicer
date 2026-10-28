@@ -89,12 +89,12 @@ double Flow::extrusion_width(const std::string& opt_key, const ConfigOptionFloat
         throw_on_missing_variable(opt_key, "nozzle_diameter");
 
     if (opt->percent) {
-		return opt->get_abs_value(float(opt_nozzle_diameters->get_at(first_printing_extruder)));
+		return opt->get_abs_value(float(get_float_at(config, "nozzle_diameter", first_printing_extruder)));
 	}
 
 	if (opt->value == 0.) {
         // If user left option to 0, calculate a sane default width.
-        return auto_extrusion_width(opt_key_to_flow_role(opt_key), float(opt_nozzle_diameters->get_at(first_printing_extruder)));
+        return auto_extrusion_width(opt_key_to_flow_role(opt_key), float(get_float_at(config, "nozzle_diameter", first_printing_extruder)));
     }
 
 	return opt->value;
@@ -217,15 +217,15 @@ Flow support_material_flow(const PrintObject *object, float layer_height)
         frSupportMaterial,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
         (object->config().support_line_width.value > 0) ? object->config().support_line_width : object->config().line_width,
-        // if object->config().support_filament == 0 (which means to not trigger tool change, but use the current extruder instead), get_at will return the 0th component.
-        float(object->print()->config().nozzle_diameter.get_at(object->config().support_filament-1)),
+        // if object->config().support_filament == 0 (which means to not trigger tool change, but use the current extruder instead), the map resolution falls back to the first extruder.
+        float(get_float_at(object->print()->config(), "nozzle_diameter", unsigned(object->config().support_filament - 1))),
         (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value));
 }
 //BBS
 Flow support_transition_flow(const PrintObject* object)
 {
     //BBS: support transition of tree support is bridge flow
-    float dmr = float(object->print()->config().nozzle_diameter.get_at(object->config().support_filament - 1));
+    float dmr = float(get_float_at(object->print()->config(), "nozzle_diameter", unsigned(object->config().support_filament - 1)));
     return Flow::bridging_flow(dmr, dmr);
 }
 
@@ -237,7 +237,7 @@ Flow support_material_1st_layer_flow(const PrintObject *object, float layer_heig
         frSupportMaterial,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
         (width.value > 0) ? width : object->config().line_width,
-        float(print_config.nozzle_diameter.get_at(object->config().support_filament-1)),
+        float(get_float_at(object->print()->config(), "nozzle_diameter", unsigned(object->config().support_filament - 1))),
         (layer_height > 0.f) ? layer_height : float(print_config.initial_layer_print_height.value));
 }
 
@@ -247,8 +247,8 @@ Flow support_material_interface_flow(const PrintObject *object, float layer_heig
         frSupportMaterialInterface,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
         (object->config().support_line_width > 0) ? object->config().support_line_width : object->config().line_width,
-        // if object->config().support_interface_filament == 0 (which means to not trigger tool change, but use the current extruder instead), get_at will return the 0th component.
-        float(object->print()->config().nozzle_diameter.get_at(object->config().support_interface_filament-1)),
+        // if object->config().support_interface_filament == 0 (which means to not trigger tool change, but use the current extruder instead), the map resolution falls back to the first extruder.
+        float(get_float_at(object->print()->config(), "nozzle_diameter", unsigned(object->config().support_interface_filament - 1))),
         (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value));
 }
 

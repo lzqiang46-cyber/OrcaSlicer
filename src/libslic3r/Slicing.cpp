@@ -38,7 +38,7 @@ inline coordf_t max_layer_height_from_nozzle(const PrintConfig &print_config, in
 {
     coordf_t min_layer_height = min_layer_height_from_nozzle(print_config, idx_nozzle);
     coordf_t max_layer_height = print_config.max_layer_height.get_at(idx_nozzle - 1);
-    coordf_t nozzle_dmr       = print_config.nozzle_diameter.get_at(idx_nozzle - 1);
+    coordf_t nozzle_dmr       = get_float_at(print_config, "nozzle_diameter", idx_nozzle > 0 ? unsigned(idx_nozzle - 1) : 0u);
     return std::max(min_layer_height, (max_layer_height == 0.) ? (0.75 * nozzle_dmr) : max_layer_height);
 }
 
@@ -55,7 +55,7 @@ coordf_t Slicing::max_layer_height_from_nozzle(const DynamicPrintConfig &print_c
 {
     coordf_t min_layer_height = min_layer_height_from_nozzle(print_config, idx_nozzle);
     coordf_t max_layer_height = print_config.opt_float("max_layer_height", idx_nozzle - 1);
-    coordf_t nozzle_dmr       = print_config.opt_float("nozzle_diameter", idx_nozzle - 1);
+    coordf_t nozzle_dmr       = get_float_at(print_config, "nozzle_diameter", idx_nozzle > 0 ? unsigned(idx_nozzle - 1) : 0u);
     return std::max(min_layer_height, (max_layer_height == 0.) ? (0.75 * nozzle_dmr) : max_layer_height);
 }
 
@@ -69,12 +69,12 @@ SlicingParameters SlicingParameters::create_from_config(
     coordf_t initial_layer_print_height                      = (print_config.initial_layer_print_height.value <= 0) ? 
         object_config.layer_height.value : print_config.initial_layer_print_height.value;
     // If object_config.support_filament == 0 resp. object_config.support_interface_filament == 0,
-    // print_config.nozzle_diameter.get_at(size_t(-1)) returns the 0th nozzle diameter,
+    // the filament-nozzle map resolution falls back to the first extruder's nozzle diameter,
     // which is consistent with the requirement that if support_filament == 0 resp. support_interface_filament == 0,
     // support will not trigger tool change, but it will use the current nozzle instead.
     // In that case all the nozzles have to be of the same diameter.
-    coordf_t support_material_extruder_dmr           = print_config.nozzle_diameter.get_at(object_config.support_filament.value - 1);
-    coordf_t support_material_interface_extruder_dmr = print_config.nozzle_diameter.get_at(object_config.support_interface_filament.value - 1);
+    coordf_t support_material_extruder_dmr           = get_float_at(print_config, "nozzle_diameter", unsigned(object_config.support_filament.value - 1));
+    coordf_t support_material_interface_extruder_dmr = get_float_at(print_config, "nozzle_diameter", unsigned(object_config.support_interface_filament.value - 1));
     bool     soluble_interface                       = object_config.support_top_z_distance.value == 0.;
 
     SlicingParameters params;

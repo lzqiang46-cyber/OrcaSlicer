@@ -921,14 +921,14 @@ static inline unsigned int segmentation_channel_filament_id(size_t channel_idx)
     return unsigned(channel_idx);
 }
 
-static float mixed_filament_reference_nozzle_mm(const MixedFilament &mixed_row, const ConfigOptionFloats &nozzle_diameters)
+static float mixed_filament_reference_nozzle_mm(const MixedFilament &mixed_row, const PrintConfig &print_cfg)
 {
     std::vector<float> samples;
     samples.reserve(2);
 
-    auto append_if_valid = [&samples, &nozzle_diameters](unsigned int component_id) {
-        if (component_id >= 1 && component_id <= nozzle_diameters.size())
-            samples.emplace_back(std::max(0.05f, float(nozzle_diameters.get_at(component_id - 1))));
+    auto append_if_valid = [&samples, &print_cfg](unsigned int component_id) {
+        if (component_id >= 1 && component_id <= print_cfg.nozzle_diameter.size())
+            samples.emplace_back(std::max(0.05f, float(get_float_at(print_cfg, "nozzle_diameter", component_id - 1))));
     };
 
     append_if_valid(mixed_row.component_a);
@@ -962,7 +962,7 @@ static coordf_t clamped_mixed_component_surface_offset(const MixedFilamentManage
     if (std::abs(offset_mm) <= EPSILON)
         return 0.f;
 
-    const float reference_nozzle = mixed_filament_reference_nozzle_mm(*mixed_row, print_cfg.nozzle_diameter);
+    const float reference_nozzle = mixed_filament_reference_nozzle_mm(*mixed_row, print_cfg);
     const coordf_t limit_mm = coordf_t(MixedFilamentManager::max_component_surface_offset_mm(reference_nozzle));
     return std::clamp(offset_mm, -limit_mm, limit_mm);
 }
@@ -2351,6 +2351,8 @@ static bool apply_pointillism_mixed_segmentation(PrintObject &print_object, std:
     if (num_channels <= num_physical)
         return false;
 
+    // Snapmaker: filament-nozzle map -- deliberate legacy first-extruder fallback: mixed-filament stripe
+    // sizing across all channels with no single filament context (audit 7-nonretract, index=0).
     const double nozzle = print_cfg.nozzle_diameter.values.empty() ? 0.4 : print_cfg.nozzle_diameter.get_at(0);
     // Keep stripe width at or above roughly one printable line to avoid
     // non-printable slivers that can get dropped later and create holes.

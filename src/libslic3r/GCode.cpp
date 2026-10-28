@@ -1462,7 +1462,7 @@ std::string WipeTowerIntegration::tool_change(GCode& gcodegen, int extruder_id, 
                                                append_tcr2(gcodegen, local_z_tcr, extruder_id, tower_z);
         }
 
-        const float nozzle_diameter = float(gcodegen.config().nozzle_diameter.get_at(size_t(extruder_id)));
+        const float nozzle_diameter = float(get_float_at(gcodegen.config(), "nozzle_diameter", unsigned(extruder_id)));
         const float line_width = nozzle_diameter * 1.25f;
         const float extra_flow = float(gcodegen.config().wipe_tower_extra_flow.value) / 100.f;
         const float extra_spacing = float(gcodegen.config().wipe_tower_extra_spacing.value) / 100.f;
@@ -3095,14 +3095,14 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
         {
             float filament_max_volumetric_speed = get_value_at(m_config, m_config.filament_max_volumetric_speed,
                                                                   ConfigFlowDomain::Filament, initial_non_support_extruder_id);
-            const double nozzle_diameter       = m_config.nozzle_diameter.get_at(initial_non_support_extruder_id);
+            const double nozzle_diameter       = get_float_at(m_config, "nozzle_diameter", initial_non_support_extruder_id);
             float        outer_wall_line_width = print.default_region_config().get_abs_value("outer_wall_line_width", nozzle_diameter);
             if (outer_wall_line_width == 0.0) {
                 float default_line_width = print.default_object_config().get_abs_value("line_width", nozzle_diameter);
                 outer_wall_line_width    = default_line_width == 0.0 ? nozzle_diameter : default_line_width;
             }
             Flow  outer_wall_flow       = Flow(outer_wall_line_width, m_config.layer_height,
-                                               m_config.nozzle_diameter.get_at(initial_non_support_extruder_id));
+                                               float(get_float_at(m_config, "nozzle_diameter", initial_non_support_extruder_id)));
             float outer_wall_speed      = get_value_at(m_config, print.default_region_config().outer_wall_speed,
                                                        ConfigFlowDomain::Process, initial_non_support_extruder_id);
             outer_wall_volumetric_speed = outer_wall_speed * outer_wall_flow.mm3_per_mm();
