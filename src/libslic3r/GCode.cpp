@@ -3579,7 +3579,7 @@ void GCode::process_layers(const Print&                                         
             }
         });
     if (m_spiral_vase) {
-        float nozzle_diameter  = EXTRUDER_CONFIG(nozzle_diameter);
+        float nozzle_diameter  = float(get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id()));
         float max_xy_smoothing = m_config.get_abs_value("spiral_mode_max_xy_smoothing", nozzle_diameter);
         this->m_spiral_vase->set_max_xy_smoothing(max_xy_smoothing);
     }
@@ -3684,7 +3684,7 @@ void GCode::process_layers(const Print&              print,
                                                 }
                                             });
     if (m_spiral_vase) {
-        float nozzle_diameter  = EXTRUDER_CONFIG(nozzle_diameter);
+        float nozzle_diameter  = float(get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id()));
         float max_xy_smoothing = m_config.get_abs_value("spiral_mode_max_xy_smoothing", nozzle_diameter);
         this->m_spiral_vase->set_max_xy_smoothing(max_xy_smoothing);
     }
@@ -7339,7 +7339,7 @@ std::string GCode::extrude_loop(
                              !m_config.spiral_mode &&
                              (loop.role() == erExternalPerimeter || (loop.role() == erPerimeter && m_config.seam_slope_inner_walls)) &&
                              layer_id() > 0;
-    const auto nozzle_diameter = EXTRUDER_CONFIG(nozzle_diameter);
+    const auto nozzle_diameter = get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id());
     if (enable_seam_slope && m_config.seam_slope_conditional.value) {
         enable_seam_slope = loop.is_smooth(m_config.scarf_angle_threshold.value * M_PI / 180., nozzle_diameter);
     }
@@ -7570,7 +7570,7 @@ std::string GCode::extrude_loop(
         Vec2d  p1 = paths.front().polyline.points.front().cast<double>();
         Vec2d  p2 = paths.front().polyline.points[1].cast<double>();
         Vec2d  v  = p2 - p1;
-        double nd = scale_(EXTRUDER_CONFIG(nozzle_diameter));
+        double nd = scale_(get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id()));
         double l2 = v.squaredNorm();
         // Shift by no more than a nozzle diameter.
         // FIXME Hiding the seams will not work nicely for very densely discretized contours!
@@ -9343,7 +9343,7 @@ std::string GCode::set_object_info(Print* print)
 // convert a model-space scaled point into G-code coordinates
 Vec2d GCode::point_to_gcode(const Point& point) const
 {
-    Vec2d extruder_offset = EXTRUDER_CONFIG(extruder_offset);
+    Vec2d extruder_offset = get_point_at(m_config, "extruder_offset", m_writer.extruder()->id());
     return unscale(point) + m_origin - extruder_offset;
 }
 
@@ -9353,7 +9353,7 @@ Point GCode::gcode_to_point(const Vec2d& point) const
     Vec2d pt = point - m_origin;
     if (const Extruder* extruder = m_writer.extruder(); extruder)
         // This function may be called at the very start from toolchange G-code when the extruder is not assigned yet.
-        pt += m_config.extruder_offset.get_at(extruder->id());
+        pt += get_point_at(m_config, "extruder_offset", extruder->id());
     return scaled<coord_t>(pt);
 }
 
