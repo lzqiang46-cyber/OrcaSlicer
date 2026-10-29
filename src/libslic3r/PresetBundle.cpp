@@ -2,6 +2,7 @@
 
 #include "PresetBundle.hpp"
 #include "FilamentColorLibrary.hpp"
+#include "FilamentNozzleMap.hpp"
 #include "PrintConfig.hpp"
 #include "libslic3r.h"
 #include "Utils.hpp"
@@ -194,6 +195,14 @@ void EnsureFilamentVolumeTypesAligned(DynamicPrintConfig &config, size_t num_fil
 {
     auto *volume_types = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
     volume_types->values.resize(std::max<size_t>(num_filaments, 1), fvtStandard);
+}
+
+// Keep filament_nozzle_map aligned with the filament slot count when slots are added or removed.
+void EnsureFilamentNozzleMapAligned(DynamicPrintConfig &config, size_t num_filaments)
+{
+    auto *mapping = config.option<ConfigOptionInts>("filament_nozzle_map", true);
+    if (!mapping->values.empty())
+        mapping->values.resize(num_filaments, 0);
 }
 
 } // namespace
@@ -1880,6 +1889,7 @@ void PresetBundle::update_selections(AppConfig &config)
                                                                     filament_presets.size());
     ApplyFilamentColors(project_config, filamentColors);
     EnsureFilamentVolumeTypesAligned(project_config, filament_presets.size());
+    EnsureFilamentNozzleMapAligned(project_config, filament_presets.size());
     std::vector<std::string> matrix;
     if (config.has_printer_setting(initial_printer_profile_name, "flush_volumes_matrix")) {
         boost::algorithm::split(matrix, config.get_printer_setting(initial_printer_profile_name, "flush_volumes_matrix"), boost::algorithm::is_any_of("|"));
@@ -2013,6 +2023,7 @@ void PresetBundle::load_selections(AppConfig &config, const PresetPreferences& p
                                                                     filament_presets.size());
     ApplyFilamentColors(project_config, filamentColors);
     EnsureFilamentVolumeTypesAligned(project_config, filament_presets.size());
+    EnsureFilamentNozzleMapAligned(project_config, filament_presets.size());
     std::vector<std::string> matrix;
     if (config.has_printer_setting(initial_printer_profile_name, "flush_volumes_matrix")) {
         boost::algorithm::split(matrix, config.get_printer_setting(initial_printer_profile_name, "flush_volumes_matrix"), boost::algorithm::is_any_of("|"));
@@ -2173,6 +2184,7 @@ void PresetBundle::update_num_filaments(unsigned int to_del_filament_id)
 
     EraseFilamentColorFields(project_config, to_del_filament_id);
     EraseEnumsOptionAt(project_config, "filament_volume_type", to_del_filament_id);
+    EraseIntOptionAt(project_config, "filament_nozzle_map", to_del_filament_id);
     EnsureFilamentVolumeTypesAligned(project_config, filament_presets.size());
     update_multi_material_filament_presets(to_del_filament_id, old_filament_count);
 }
@@ -2189,6 +2201,7 @@ void PresetBundle::set_num_filaments(unsigned int n, std::vector<std::string> ne
     ams_multi_color_filment.resize(n);
     EnsureFilamentColorFieldsAligned(project_config);
     EnsureFilamentVolumeTypesAligned(project_config, n);
+    EnsureFilamentNozzleMapAligned(project_config, n);
     // BBS set new filament color to new_color
     if (old_filament_count < n) {
         if (!new_colors.empty()) {
@@ -2238,6 +2251,7 @@ void PresetBundle::set_num_filaments(unsigned int n, std::string new_color)
     ams_multi_color_filment.resize(n);
     EnsureFilamentColorFieldsAligned(project_config);
     EnsureFilamentVolumeTypesAligned(project_config, n);
+    EnsureFilamentNozzleMapAligned(project_config, n);
 
     //BBS set new filament color to new_color
     if (old_filament_count < n) {
@@ -2313,6 +2327,7 @@ unsigned int PresetBundle::sync_ams_list(unsigned int &unknowns)
     filament_color->values = filament_colors;
     EnsureFilamentColorFieldsAligned(project_config);
     EnsureFilamentVolumeTypesAligned(project_config, filament_presets.size());
+    EnsureFilamentNozzleMapAligned(project_config, filament_presets.size());
     update_multi_material_filament_presets();
     return filament_presets.size();
 }
@@ -3804,6 +3819,12 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
         : (deleting_filament ? (num_filaments + 1) : num_filaments);
     const std::vector<MixedFilament> old_mixed = this->mixed_filaments.mixed_filaments();
     m_last_filament_id_remap.clear();
+
+    // Snap the filament-to-nozzle map to the edited printer's physical extruder count
+    // (e.g. switching to a printer with fewer nozzles); read paths already fall back to
+    // extruder 0 for out-of-range entries, this keeps the stored project data consistent.
+    FilamentNozzleMap::normalize(this->project_config, num_filaments,
+        FilamentNozzleMap::physical_extruder_count(printers.get_edited_preset().config));
 
     // Now verify if flush_volumes_matrix has proper size (it is used to deduce number of extruders in wipe tower generator):
     std::vector<double> old_matrix = this->project_config.option<ConfigOptionFloats>("flush_volumes_matrix")->values;
