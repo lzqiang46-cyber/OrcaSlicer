@@ -447,41 +447,6 @@ inline double get_float_at(const ConfigOptionResolver &config, const t_config_op
     }
 }
 
-inline int get_int_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
-{
-    const ConfigOption *opt = config.option(opt_key);
-    if (opt == nullptr) {
-        assert(opt != nullptr);
-        return 0;
-    }
-    const size_t idx = get_config_idx(config, derived_domain(opt_key), filament_id);
-    switch (opt->type()) {
-    case coInts:  return static_cast<const ConfigOptionInts *>(opt)->get_at(idx);
-    case coEnums: return static_cast<const ConfigOptionEnumsGeneric *>(opt)->get_at(idx);
-    default:      assert(false); return 0;
-    }
-}
-
-inline bool get_bool_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
-{
-    const ConfigOption *opt = config.option(opt_key);
-    if (opt == nullptr || opt->type() != coBools) {
-        assert(opt != nullptr && opt->type() == coBools);
-        return false;
-    }
-    return static_cast<const ConfigOptionBools *>(opt)->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
-}
-
-inline std::string get_string_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
-{
-    const ConfigOption *opt = config.option(opt_key);
-    if (opt == nullptr || opt->type() != coStrings) {
-        assert(opt != nullptr && opt->type() == coStrings);
-        return std::string{};
-    }
-    return static_cast<const ConfigOptionStrings *>(opt)->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
-}
-
 inline Vec2d get_point_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
 {
     const ConfigOption *opt = config.option(opt_key);
@@ -498,17 +463,6 @@ inline Vec2d get_point_at(const ConfigOptionResolver &config, const t_config_opt
     }
     return points->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
 }
-
-inline FloatOrPercent get_float_or_percent_at(const ConfigOptionResolver &config, const t_config_option_key &opt_key, unsigned int filament_id = 0)
-{
-    const ConfigOption *opt = config.option(opt_key);
-    if (opt == nullptr || opt->type() != coFloatsOrPercents) {
-        assert(opt != nullptr && opt->type() == coFloatsOrPercents);
-        return FloatOrPercent{0., false};
-    }
-    return static_cast<const ConfigOptionFloatsOrPercents *>(opt)->get_at(get_config_idx(config, derived_domain(opt_key), filament_id));
-}
-
 
 // end Snapmaker: flow variant------------------------------------------------------------------------
 
