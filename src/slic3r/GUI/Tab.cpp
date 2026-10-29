@@ -3973,12 +3973,14 @@ PageShp TabFilament::add_filament_overrides_page()
             auto check_box = new ::CheckBox(parent); // ORCA modernize checkboxes
             check_box->Bind(wxEVT_TOGGLEBUTTON, [this, optgroup_wk, opt_key](wxCommandEvent& evt) {
                 const bool is_checked = evt.IsChecked();
-                // Snapmaker: filament-nozzle map -- index the filament override vector by the
-                // filament slot currently being edited (TabPresetComboBox::m_filament_idx).
+                // Snapmaker: filament-nozzle map -- the project slot currently being edited
+                // (TabPresetComboBox::m_filament_idx) resolves the mapped physical extruder
+                // for showing its machine value, while m_config holds the single filament
+                // preset being edited: plain (non flow-variant) options live at local index 0.
                 const int filament_idx = std::max(0, get_combo_box()->get_filament_idx());
                 const int option_index = is_filament_flow_variant_option(opt_key)
                     ? int(flow_variant_view_index())
-                    : filament_idx;
+                    : 0;
                 if (auto optgroup_sh = optgroup_wk.lock(); optgroup_sh) {
                     if (Field *field = optgroup_sh->get_fieldc(opt_key, option_index); field != nullptr) {
                         field->toggle(is_checked);
