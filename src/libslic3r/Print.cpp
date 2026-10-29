@@ -728,6 +728,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         } else if (
                opt_key == "initial_layer_print_height"
             || opt_key == "nozzle_diameter"
+            || opt_key == "filament_nozzle_map"
             || opt_key == "filament_shrink"
             || opt_key == "filament_shrinkage_compensation_z"
             || opt_key == "resolution"
