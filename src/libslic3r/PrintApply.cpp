@@ -255,12 +255,18 @@ static t_config_option_keys print_config_diffs(
         // const ConfigOption *opt_new_filament = std::binary_search(extruder_retract_keys.begin(), extruder_retract_keys.end(), opt_key) ? new_full_config.option(filament_prefix + opt_key) : nullptr;
         const ConfigOption* opt_new_filament = (iter == extruder_retract_keys.end()) ? nullptr :
                                                                                        new_full_config.option(filament_prefix + opt_key);
-        if (opt_new_filament != nullptr && ! opt_new_filament->is_nil()) {
+        if (opt_new_filament != nullptr) {
             // An extruder retract override is available at some of the filament presets.
             const bool override_gated = (opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
                                      && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament; // ugly code, remove it later if firmware supports
             bool overriden = ! opt_new_filament->is_nil();
             if (overriden || !config_options_equal(opt_old, opt_new)) {
+                if (override_gated) {
+                    // The filament-level gate is off: keep machine semantics, ignore the overrides.
+                    if (!config_options_equal(opt_old, opt_new))
+                        print_diff.emplace_back(opt_key);
+                    continue;
+                }
                 // Machine index inherited by each nil position of the filament vector. The
                 // filament array axis differs per key: flow-variant keys are expanded per
                 // flow mode (position -> variant position), plain keys carry one entry per
@@ -278,14 +284,11 @@ static t_config_option_keys print_config_diffs(
                     fallback_indices.emplace_back(machine_size == 0 ? 0 : std::min(extruder, machine_size - 1));
                 }
                 auto opt_copy = opt_new->clone();
-                if (! override_gated)
-                    opt_copy->apply_override(opt_new_filament, &fallback_indices);
+                opt_copy->apply_override(opt_new_filament, &fallback_indices);
                 bool changed = !config_options_equal(opt_old, opt_copy);
                 if (changed)
                     print_diff.emplace_back(opt_key);
                 if (changed || overriden) {
-                    if (override_gated)
-                        continue;
                     // filament_overrides will be applied to the placeholder parser, which layers these parameters over full_print_config.
                     filament_overrides.set_key_value(opt_key, opt_copy);
                 } else
