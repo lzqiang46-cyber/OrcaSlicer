@@ -261,15 +261,20 @@ static t_config_option_keys print_config_diffs(
                                      && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament; // ugly code, remove it later if firmware supports
             bool overriden = ! opt_new_filament->is_nil();
             if (overriden || !config_options_equal(opt_old, opt_new)) {
-                // Machine index inherited by each nil position of the filament vector:
-                // the extruder mapped to the position's filament slot.
+                // Machine index inherited by each nil position of the filament vector. The
+                // filament array axis differs per key: flow-variant keys are expanded per
+                // flow mode (position -> variant position), plain keys carry one entry per
+                // filament slot (the position IS the slot).
                 const auto         *filament     = static_cast<const ConfigOptionVectorBase*>(opt_new_filament);
                 const auto         *machine      = static_cast<const ConfigOptionVectorBase*>(opt_new);
                 const size_t        machine_size = machine->size();
+                const bool          variant_axis = is_filament_flow_variant_option(filament_prefix + opt_key);
                 std::vector<size_t> fallback_indices;
                 fallback_indices.reserve(filament->size());
                 for (size_t pos = 0; pos < filament->size(); ++pos) {
-                    const size_t extruder = FilamentNozzleMap::physical_extruder_for_variant_position(new_full_config, pos);
+                    const size_t extruder = variant_axis ?
+                        FilamentNozzleMap::physical_extruder_for_variant_position(new_full_config, pos) :
+                        FilamentNozzleMap::physical_extruder_for_filament(new_full_config, unsigned(pos));
                     fallback_indices.emplace_back(machine_size == 0 ? 0 : std::min(extruder, machine_size - 1));
                 }
                 auto opt_copy = opt_new->clone();
