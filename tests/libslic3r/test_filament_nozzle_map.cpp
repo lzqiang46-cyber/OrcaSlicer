@@ -1,11 +1,11 @@
 // Snapmaker: filament-to-nozzle (physical extruder) mapping -- regression tests for the
-// retract-override merge in print_config_diffs() (PrintApply.cpp) and the map resolution
+// retract-override merge behind print_config_diffs() (PrintApply.cpp) and the map resolution
 // helpers (FilamentNozzleMap.cpp).
 //
-// The merge loop itself is file-static in PrintApply.cpp, so these cases replay its exact
-// steps (fallback-index construction + ConfigOption::apply_override) with the real library
-// functions: FilamentNozzleMap::physical_extruder_for_{filament,variant_position} and
-// is_filament_flow_variant_option(). Keep this mirror in sync with print_config_diffs().
+// The merge itself is the production function merge_retract_override(), defined in
+// PrintApply.cpp right before print_config_diffs(), which calls it unconditionally for every
+// non-gated retract key and diffs the result against the previously applied array. Only the
+// thin decision (print_diff / store) stays inline in the file-static entry.
 #include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/Config.hpp"
@@ -15,6 +15,22 @@
 #include <cmath>
 #include <string>
 #include <vector>
+
+// Production retract-override merge -- no public header (it lives beside its only production
+// caller in PrintApply.cpp), so it is declared here to link the real symbol.
+namespace Slic3r {
+
+struct RetractOverrideMerge {
+    ConfigOption *merged    = nullptr;
+    bool          overriden = false;
+    bool          changed   = false;
+};
+
+RetractOverrideMerge merge_retract_override(const ConfigOptionResolver &config, const std::string &filament_key,
+                                            const ConfigOption *machine, const ConfigOption *filament_override,
+                                            const ConfigOption *current_effective);
+
+} // namespace Slic3r
 
 using namespace Slic3r;
 
@@ -29,29 +45,10 @@ DynamicPrintConfig map_test_config(const std::vector<int> &nozzle_map, const std
     return config;
 }
 
-// Mirror of the merge loop in print_config_diffs(): nil positions of a filament override
-// array inherit the machine value of the extruder mapped to the position's owner -- the
-// position is a flow-variant position for variant keys and a plain filament slot otherwise.
-std::vector<double> merged_override(const DynamicPrintConfig &config, const std::string &filament_key,
-                                    const ConfigOptionFloats &machine, const ConfigOptionFloatsNullable &filament)
+std::vector<double> floats_of(const ConfigOption *option)
 {
-    const bool variant_axis = is_filament_flow_variant_option(filament_key);
-    std::vector<size_t> fallback_indices;
-    fallback_indices.reserve(filament.size());
-    for (size_t pos = 0; pos < filament.size(); ++ pos) {
-        const size_t extruder = variant_axis ?
-            FilamentNozzleMap::physical_extruder_for_variant_position(config, pos) :
-            FilamentNozzleMap::physical_extruder_for_filament(config, unsigned(pos));
-        fallback_indices.emplace_back(machine.size() == 0 ? 0 : std::min(extruder, machine.size() - 1));
-    }
-    ConfigOption *merged = machine.clone();
-    merged->apply_override(&filament, &fallback_indices);
-    const auto *merged_floats = static_cast<const ConfigOptionFloats*>(merged);
-    std::vector<double> out(merged_floats->size());
-    for (size_t i = 0; i < merged_floats->size(); ++ i)
-        out[i] = merged_floats->get_at(i);
-    delete merged;
-    return out;
+    const auto *floats = static_cast<const ConfigOptionFloats*>(option);
+    return {floats->values.begin(), floats->values.end()};
 }
 
 } // namespace
@@ -81,8 +78,8 @@ TEST_CASE("Variant positions resolve through the filament-nozzle map", "[Filamen
 }
 
 // F3: with every override nil the merged array must still carry each slot's mapped
-// nozzle value; before the fix the merge was skipped and consumers read the raw machine
-// array by slot index.
+// nozzle value; the merge is unconditional, so the untouched machine array as the
+// current value counts as changed whenever the map is non-trivial.
 TEST_CASE("All-nil retract overrides inherit the mapped nozzle values", "[FilamentNozzleMap][F3]")
 {
     const DynamicPrintConfig config = map_test_config({1, 0}, {1, 1});
@@ -91,11 +88,64 @@ TEST_CASE("All-nil retract overrides inherit the mapped nozzle values", "[Filame
     machine.values = {0.2, 0.8};
     ConfigOptionFloatsNullable filament;
     filament.values = {ConfigOptionFloatsNullable::nil_value(), ConfigOptionFloatsNullable::nil_value()};
+    ConfigOptionFloats current; // state left behind by the identity map [0,1]
+    current.values = {0.2, 0.8};
 
-    const std::vector<double> merged = merged_override(config, "filament_retraction_length", machine, filament);
+    auto merge = merge_retract_override(config, "filament_retraction_length", &machine, &filament, &current);
+    const std::vector<double> merged = floats_of(merge.merged);
     REQUIRE(merged.size() == 2);
     CHECK(merged[0] == 0.8); // slot A -> extruder 1
     CHECK(merged[1] == 0.2); // slot B -> extruder 0
+    CHECK_FALSE(merge.overriden);
+    CHECK(merge.changed);
+    delete merge.merged;
+}
+
+// R1 (second-review report, old F3 residue): all overrides nil, machine values untouched and
+// the previously applied array still equal to the machine array -- flipping only the map must
+// still re-derive the effective array. The old inner gate skipped the merge in exactly this
+// state and consumers kept reading the previous extruder order.
+TEST_CASE("Flipping only the map re-derives the effective retract array", "[FilamentNozzleMap][F3][R1]")
+{
+    const DynamicPrintConfig config = map_test_config({1, 0}, {1, 1});
+
+    ConfigOptionFloats machine;
+    machine.values = {0.2, 0.8};
+    ConfigOptionFloatsNullable filament;
+    filament.values = {ConfigOptionFloatsNullable::nil_value(), ConfigOptionFloatsNullable::nil_value()};
+
+    SECTION("old effective array equals the machine array (the R1 counterexample)")
+    {
+        ConfigOptionFloats current;
+        current.values = {0.2, 0.8};
+        auto merge = merge_retract_override(config, "filament_retraction_length", &machine, &filament, &current);
+        const std::vector<double> merged = floats_of(merge.merged);
+        CHECK(merged.size() == 2);
+        CHECK(merged[0] == 0.8); // expected A = 0.8
+        CHECK(merged[1] == 0.2); // expected B = 0.2
+        CHECK(merge.changed);    // the caller must emit the diff and store the array
+        delete merge.merged;
+    }
+    SECTION("old effective array already remapped (steady state converges)")
+    {
+        ConfigOptionFloats current;
+        current.values = {0.8, 0.2};
+        auto merge = merge_retract_override(config, "filament_retraction_length", &machine, &filament, &current);
+        CHECK_FALSE(merge.changed); // nothing to store or invalidate
+        CHECK_FALSE(merge.overriden);
+        delete merge.merged;
+    }
+    SECTION("old effective array differs from the machine array (A06 contrast)")
+    {
+        ConfigOptionFloats current;
+        current.values = {0.3, 0.9};
+        auto merge = merge_retract_override(config, "filament_retraction_length", &machine, &filament, &current);
+        const std::vector<double> merged = floats_of(merge.merged);
+        CHECK(merged[0] == 0.8);
+        CHECK(merged[1] == 0.2);
+        CHECK(merge.changed);
+        delete merge.merged;
+    }
 }
 
 // F4: plain (non flow-variant) keys must resolve the fallback by filament slot, not by
@@ -109,11 +159,16 @@ TEST_CASE("Plain retract keys inherit per slot, not per variant position", "[Fil
     machine.values = {0.1, 0.6};
     ConfigOptionFloatsNullable filament;
     filament.values = {0.7, ConfigOptionFloatsNullable::nil_value()};
+    ConfigOptionFloats current;
+    current.values = {0.1, 0.6};
 
-    const std::vector<double> merged = merged_override(config, "filament_z_hop", machine, filament);
+    auto merge = merge_retract_override(config, "filament_z_hop", &machine, &filament, &current);
+    const std::vector<double> merged = floats_of(merge.merged);
     REQUIRE(merged.size() == 2);
     CHECK(merged[0] == 0.7); // slot A override kept
     CHECK(merged[1] == 0.6); // slot B inherits its own nozzle (extruder 1)
+    CHECK(merge.overriden);
+    delete merge.merged;
 }
 
 // Combined: variant key, asymmetric steps, partial override. A/std inherits, A/high is
@@ -126,12 +181,17 @@ TEST_CASE("Variant retract keys with asymmetric flow steps merge per variant", "
     machine.values = {0.2, 0.8};
     ConfigOptionFloatsNullable filament; // positions: A/std, A/high_flow, B/std
     filament.values = {ConfigOptionFloatsNullable::nil_value(), 0.5, ConfigOptionFloatsNullable::nil_value()};
+    ConfigOptionFloats current;
+    current.values = {0.2, 0.2, 0.8};
 
-    const std::vector<double> merged = merged_override(config, "filament_retraction_length", machine, filament);
+    auto merge = merge_retract_override(config, "filament_retraction_length", &machine, &filament, &current);
+    const std::vector<double> merged = floats_of(merge.merged);
     REQUIRE(merged.size() == 3);
     CHECK(merged[0] == 0.2); // A/std -> extruder 0
     CHECK(merged[1] == 0.5); // A/high override kept
     CHECK(merged[2] == 0.8); // B/std -> extruder 1
+    CHECK(merge.overriden);
+    delete merge.merged;
 }
 
 // F2 support: the stored map is normalized to the filament count and clamped to the
