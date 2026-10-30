@@ -2,11 +2,14 @@
 #include "ProjectSchemaVersion.hpp"
 #include "ClipperUtils.hpp"
 #include "Config.hpp"
+#include "FilamentNozzleMap.hpp"
+#include "PresetFlowVariant.hpp"
 #include "format.hpp"
 #include "I18N.hpp"
 
 #include "GCode/Thumbnails.hpp"
 #include <set>
+#include <unordered_map>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
@@ -4124,6 +4127,18 @@ void PrintConfigDef::init_fff_params()
     def->cli = ConfigOptionDef::nocli;
     def->set_default_value(new ConfigOptionEnumsGeneric { fvtStandard });
 
+    // Snapmaker: filament-to-nozzle mapping -------------------------------------------------------
+    def = this->add("filament_nozzle_map", coInts);
+    def->label = L("Filament to nozzle map");
+    def->tooltip = L("Mapping from each filament slot to its physical extruder (nozzle), one 0-based entry "
+                     "per filament. An empty value or an invalid entry falls back to the first "
+                     "extruder.");
+    def->mode = comDevelop;
+    def->cli = ConfigOptionDef::nocli;
+    def->readonly = true;
+    def->min = 0;
+    def->set_default_value(new ConfigOptionInts{});
+
     const ProjectSchemaDefinition& project_schema = ProjectSchemaRegistry::definition();
     def = this->add(project_schema.config_key, coInt);
     def->label = L("Project schema version");
@@ -7374,7 +7389,7 @@ void PrintConfigDef::init_sla_params()
 
 // ==== Snapmaker: flow-variant support ============================================================
 
-const ConfigOptionStrings* strings_option(const ConfigBase& config, const char* key)
+const ConfigOptionStrings* strings_option(const ConfigOptionResolver& config, const char* key)
 {
     const ConfigOption* opt = config.option(key);
     if (opt == nullptr || opt->type() != coStrings)
@@ -7383,7 +7398,7 @@ const ConfigOptionStrings* strings_option(const ConfigBase& config, const char* 
     return static_cast<const ConfigOptionStrings*>(opt);
 }
 
-const ConfigOptionInts* ints_option(const ConfigBase& config, const char* key)
+const ConfigOptionInts* ints_option(const ConfigOptionResolver& config, const char* key)
 {
     const ConfigOption* opt = config.option(key);
     if (opt == nullptr || opt->type() != coInts)
@@ -7392,7 +7407,7 @@ const ConfigOptionInts* ints_option(const ConfigBase& config, const char* key)
     return static_cast<const ConfigOptionInts*>(opt);
 }
 
-const ConfigOptionEnumsGeneric* enums_option(const ConfigBase& config, const char* key)
+const ConfigOptionEnumsGeneric* enums_option(const ConfigOptionResolver& config, const char* key)
 {
     const ConfigOption* opt = config.option(key);
     if (opt == nullptr || opt->type() != coEnums)
@@ -7432,9 +7447,15 @@ const char* flow_support_key(ConfigFlowDomain domain)
         return "filament_flow_support";
     case ConfigFlowDomain::Process:
         return "process_flow_support";
-    default:
+    case ConfigFlowDomain::Printer:
         return "printer_flow_support";
+    case ConfigFlowDomain::Default:
+    case ConfigFlowDomain::PhysicalExtruder:
+        // Neither carries a flow variant declaration.
+        assert(false);
+        return "";
     }
+    return nullptr;
 }
 
 const std::vector<std::string>& filament_flow_variant_options()
@@ -7550,23 +7571,57 @@ bool is_machine_flow_variant_option(const std::string &key)
     return std::find(options.begin(), options.end(), key) != options.end();
 }
 
-size_t get_config_idx(const ConfigBase &config, ConfigFlowDomain domain, unsigned int filament_id)
+// Snapmaker: flow variant
+ConfigFlowDomain derived_domain(const t_config_option_key &opt_key)
+{
+    static const std::unordered_map<std::string, ConfigFlowDomain> table = [] {
+        std::unordered_map<std::string, ConfigFlowDomain> t;
+        auto add = [&t](const std::vector<std::string> &keys, ConfigFlowDomain domain) {
+            for (const std::string &key : keys)
+                t.emplace(key, domain); // first insertion wins
+        };
+        add(print_config_def.extruder_retract_keys(), ConfigFlowDomain::Filament);
+        // The retract keys were claimed above, so only the hardware keys (nozzle_diameter, ...) land here.
+        add(print_config_def.extruder_option_keys(), ConfigFlowDomain::PhysicalExtruder);
+        add(process_flow_variant_options(),          ConfigFlowDomain::Process);
+        add(machine_flow_variant_options(),          ConfigFlowDomain::Printer);
+        add(filament_flow_variant_options(),         ConfigFlowDomain::Filament);
+        return t;
+    }();
+    const auto it = table.find(opt_key);
+    // Keys outside the classification lists resolve to Default: plain filament slot indexing.
+    return it == table.end() ? ConfigFlowDomain::Default : it->second;
+}
+
+// Snapmaker: filament-nozzle map
+static std::string flow_type_of(const ConfigOptionResolver &config, unsigned int filament_id)
 {
     const ConfigOptionEnumsGeneric* volume_types = enums_option(config, "filament_volume_type");
-    const ConfigOptionStrings*      flow_support = strings_option(config, flow_support_key(domain));
+    FilamentVolumeType volume_type = fvtStandard;
+    if (FilamentNozzleMap::is_active(config))
+        volume_type = get_nozzle_volume_type(config, FilamentNozzleMap::physical_extruder_for_filament(config, filament_id));
+    else if (volume_types != nullptr && filament_id < volume_types->values.size())
+        volume_type = FilamentVolumeType(volume_types->values[filament_id]);
+    return to_string(volume_type);
+}
 
+size_t get_config_idx(const ConfigOptionResolver &config, ConfigFlowDomain domain, unsigned int filament_id)
+{
     switch (domain) {
+    case ConfigFlowDomain::Default:
+        return filament_id;
+    // Snapmaker: filament-nozzle map
+    case ConfigFlowDomain::PhysicalExtruder:
+        return FilamentNozzleMap::physical_extruder_for_filament(config, filament_id);
     case ConfigFlowDomain::Process:
     case ConfigFlowDomain::Printer: {
-        if (volume_types == nullptr || volume_types->values.empty() || flow_support == nullptr)
+        const ConfigOptionStrings* flow_support = strings_option(config, flow_support_key(domain));
+        if (flow_support == nullptr)
             return 0;
 
-        const FilamentVolumeType volume_type = filament_id < volume_types->values.size()
-            ? FilamentVolumeType(volume_types->values[filament_id])
-            : fvtStandard;
-        const std::string flow_type = to_string(volume_type);
-        return flow_variant_index(flow_support->values, flow_type);
+        return flow_variant_index(flow_support->values, flow_type_of(config, filament_id));
     }
+
     case ConfigFlowDomain::Filament: {
         const ConfigOptionInts* step_sizes = ints_option(config, "filament_flow_step_size");
         if (step_sizes == nullptr || step_sizes->values.empty())
@@ -7582,15 +7637,13 @@ size_t get_config_idx(const ConfigBase &config, ConfigFlowDomain domain, unsigne
         for (size_t i = 0; i < filament_id; ++i)
             segment_start += step_size_of(i);
 
-        if (volume_types == nullptr || volume_types->values.empty() || flow_support == nullptr)
+        const ConfigOptionStrings* flow_support = strings_option(config, flow_support_key(domain));
+        if (flow_support == nullptr)
             return segment_start;
 
-        const FilamentVolumeType volume_type = filament_id < volume_types->values.size()
-            ? FilamentVolumeType(volume_types->values[filament_id])
-            : fvtStandard;
-        const std::string flow_type    = to_string(volume_type);
-        const size_t      segment_size = step_size_of(filament_id);
-        const auto&       declarations = flow_support->values;
+        const std::string flow_type = flow_type_of(config, filament_id);
+        const size_t segment_size = step_size_of(filament_id);
+        const auto&  declarations = flow_support->values;
         for (size_t pos = 0; pos < segment_size && segment_start + pos < declarations.size(); ++pos) {
             if (declarations[segment_start + pos] == flow_type)
                 return segment_start + pos;

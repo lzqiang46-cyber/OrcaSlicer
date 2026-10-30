@@ -1,6 +1,7 @@
 #include "Plater.hpp"
 #include "MixedFilamentDialog.hpp"
 #include "MixedFilamentBatchDialog.hpp"
+#include "FilamentNozzleMapDialog.hpp"
 #include "MixedGradientSelector.hpp"
 #include "MixedColorMatchPanel.hpp"
 #include "MixedFilamentBadge.hpp"
@@ -3040,6 +3041,16 @@ Sidebar::Sidebar(Plater *parent)
         set_progress(100);
     });
     bSizer39->Add(p->m_btn_batch_match, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
+
+    // Snapmaker: filament-nozzle mapping (料箱耗材管理) entry, next to Color Mixing Match.
+    Button* nozzle_map_btn = new Button(p->m_panel_filament_title, _L("Nozzle Mapping"));
+    nozzle_map_btn->SetStyle(ButtonStyle::Regular, ButtonType::Compact);
+    nozzle_map_btn->SetToolTip(_L("Assign each filament slot to the physical extruder (nozzle) that feeds it."));
+    nozzle_map_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        FilamentNozzleMapDialog dlg(this);
+        dlg.ShowModal();
+    });
+    bSizer39->Add(nozzle_map_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
 
     ams_btn = new ScalableButton(p->m_panel_filament_title, wxID_ANY, "ams_fila_sync", wxEmptyString, wxDefaultSize, wxDefaultPosition,
                                                  wxBU_EXACTFIT | wxNO_BORDER, false, 16); // ORCA match icon size with other icons as 16x16
@@ -14526,7 +14537,10 @@ void Plater::priv::set_current_panel(wxPanel* panel, bool no_slice)
                     // plate) surface here too.
                     bool guard_passed = this->q->guard_before_slice_plate();
                     bool grouping_confirmed = true;
-                    if (guard_passed && GUI::FlowType::any_nozzle_high_flow()) {
+                    if (guard_passed && GUI::FlowType::filament_nozzle_map_active()) {
+                        // With an active filament-nozzle map the flow types follow the map; no grouping dialog.
+                        GUI::FlowType::sync_filament_volume_types_from_nozzle_map();
+                    } else if (guard_passed && GUI::FlowType::any_nozzle_high_flow()) {
                         bool all_high_flow = GUI::FlowType::distinct_nozzle_flow_type_count() < 2;
                         GUI::FilamentGroupDialog dlg(q, all_high_flow);
                         grouping_confirmed = dlg.ShowModal() == wxID_OK;
@@ -16212,9 +16226,8 @@ PlateBBoxData Plater::priv::generate_first_layer_bbox()
     bboxdata.first_extruder = print->get_tool_ordering().first_extruder();
     bboxdata.bed_type       = bed_type_to_gcode_string(print->config().curr_bed_type.value);
     // get nozzle diameter
-    auto opt_nozzle_diameters = print->config().option<ConfigOptionFloats>("nozzle_diameter");
-    if (opt_nozzle_diameters != nullptr)
-        bboxdata.nozzle_diameter = float(opt_nozzle_diameters->get_at(bboxdata.first_extruder));
+    if (print->config().option<ConfigOptionFloats>("nozzle_diameter") != nullptr)
+        bboxdata.nozzle_diameter = float(get_float_at(print->config(), "nozzle_diameter", bboxdata.first_extruder));
     //PrintObjectPtrs objects;
     //if (this->printer_technology == ptFFF) {
     //    objects = this->background_process.m_fff_print->objects().vector();
@@ -23862,7 +23875,10 @@ int Plater::select_sliced_plate(int plate_index)
     int ret = 0;
     BOOST_LOG_TRIVIAL(info) << "select_sliced_plate plate_idx=" << plate_index;
 
-    if (GUI::FlowType::any_nozzle_high_flow()) {
+    if (GUI::FlowType::filament_nozzle_map_active()) {
+        // With an active filament-nozzle map the flow types follow the map; no grouping dialog.
+        GUI::FlowType::sync_filament_volume_types_from_nozzle_map();
+    } else if (GUI::FlowType::any_nozzle_high_flow()) {
         if (p->partplate_list.is_filament_group_dirty()) {
             bool all_high_flow = GUI::FlowType::distinct_nozzle_flow_type_count() < 2;
             GUI::FilamentGroupDialog dlg(this, all_high_flow);

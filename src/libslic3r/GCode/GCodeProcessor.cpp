@@ -737,7 +737,7 @@ void GCodeProcessor::apply_config(const PrintConfig& config)
     m_result.nozzle_hrc = static_cast<int>(config.nozzle_hrc.getInt());
     m_result.nozzle_type = config.nozzle_type;
     for (size_t i = 0; i < extruders_count; ++ i) {
-        m_extruder_offsets[i]           = to_3d(config.extruder_offset.get_at(i).cast<float>().eval(), 0.f);
+        m_extruder_offsets[i]           = to_3d(get_point_at(config, "extruder_offset", unsigned(i)).cast<float>().eval(), 0.f);
         m_extruder_colors[i]            = static_cast<unsigned char>(i);
         m_extruder_temps_first_layer_config[i] = static_cast<int>(get_value_at(config, config.nozzle_temperature_initial_layer, ConfigFlowDomain::Filament, i));
         m_extruder_temps_config[i]      = static_cast<int>(get_value_at(config, config.nozzle_temperature, ConfigFlowDomain::Filament, i));
@@ -942,9 +942,12 @@ void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
             }
         }
         else {
-            m_extruder_offsets.resize(extruder_offset->values.size());
-            for (size_t i = 0; i < extruder_offset->values.size(); ++i) {
-                Vec2f offset = extruder_offset->values[i].cast<float>();
+            // One entry per tool (= filament slot): the offset of the physical extruder the slot
+            // maps to. G-code files exported before the filament-nozzle map carry no mapping and
+            // resolve every tool to the first extruder.
+            m_extruder_offsets.resize(m_result.extruders_count);
+            for (size_t i = 0; i < m_result.extruders_count; ++i) {
+                Vec2f offset = get_point_at(config, "extruder_offset", unsigned(i)).cast<float>();
                 m_extruder_offsets[i] = { offset(0), offset(1), 0.0f };
             }
         }

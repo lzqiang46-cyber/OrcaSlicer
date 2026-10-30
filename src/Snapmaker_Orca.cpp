@@ -5923,9 +5923,8 @@ int CLI::run(int argc, char **argv)
                 plate_bbox->bed_type       = bed_type_to_gcode_string(plate_bed_type);
             }
             // get nozzle diameter
-            auto opt_nozzle_diameters = m_print_config.option<ConfigOptionFloats>("nozzle_diameter");
-            if (opt_nozzle_diameters != nullptr)
-                plate_bbox->nozzle_diameter = float(opt_nozzle_diameters->get_at(plate_bbox->first_extruder));
+            if (print->config().option<ConfigOptionFloats>("nozzle_diameter") != nullptr)
+                plate_bbox->nozzle_diameter = float(get_float_at(print->config(), "nozzle_diameter", plate_bbox->first_extruder));
 
             auto objects = print->objects();
             auto orig = part_plate->get_origin();

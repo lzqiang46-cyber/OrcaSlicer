@@ -1462,7 +1462,7 @@ std::string WipeTowerIntegration::tool_change(GCode& gcodegen, int extruder_id, 
                                                append_tcr2(gcodegen, local_z_tcr, extruder_id, tower_z);
         }
 
-        const float nozzle_diameter = float(gcodegen.config().nozzle_diameter.get_at(size_t(extruder_id)));
+        const float nozzle_diameter = float(get_float_at(gcodegen.config(), "nozzle_diameter", unsigned(extruder_id)));
         const float line_width = nozzle_diameter * 1.25f;
         const float extra_flow = float(gcodegen.config().wipe_tower_extra_flow.value) / 100.f;
         const float extra_spacing = float(gcodegen.config().wipe_tower_extra_spacing.value) / 100.f;
@@ -3095,14 +3095,14 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
         {
             float filament_max_volumetric_speed = get_value_at(m_config, m_config.filament_max_volumetric_speed,
                                                                   ConfigFlowDomain::Filament, initial_non_support_extruder_id);
-            const double nozzle_diameter       = m_config.nozzle_diameter.get_at(initial_non_support_extruder_id);
+            const double nozzle_diameter       = get_float_at(m_config, "nozzle_diameter", initial_non_support_extruder_id);
             float        outer_wall_line_width = print.default_region_config().get_abs_value("outer_wall_line_width", nozzle_diameter);
             if (outer_wall_line_width == 0.0) {
                 float default_line_width = print.default_object_config().get_abs_value("line_width", nozzle_diameter);
                 outer_wall_line_width    = default_line_width == 0.0 ? nozzle_diameter : default_line_width;
             }
             Flow  outer_wall_flow       = Flow(outer_wall_line_width, m_config.layer_height,
-                                               m_config.nozzle_diameter.get_at(initial_non_support_extruder_id));
+                                               float(get_float_at(m_config, "nozzle_diameter", initial_non_support_extruder_id)));
             float outer_wall_speed      = get_value_at(m_config, print.default_region_config().outer_wall_speed,
                                                        ConfigFlowDomain::Process, initial_non_support_extruder_id);
             outer_wall_volumetric_speed = outer_wall_speed * outer_wall_flow.mm3_per_mm();
@@ -3579,7 +3579,7 @@ void GCode::process_layers(const Print&                                         
             }
         });
     if (m_spiral_vase) {
-        float nozzle_diameter  = EXTRUDER_CONFIG(nozzle_diameter);
+        float nozzle_diameter  = float(get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id()));
         float max_xy_smoothing = m_config.get_abs_value("spiral_mode_max_xy_smoothing", nozzle_diameter);
         this->m_spiral_vase->set_max_xy_smoothing(max_xy_smoothing);
     }
@@ -3684,7 +3684,7 @@ void GCode::process_layers(const Print&              print,
                                                 }
                                             });
     if (m_spiral_vase) {
-        float nozzle_diameter  = EXTRUDER_CONFIG(nozzle_diameter);
+        float nozzle_diameter  = float(get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id()));
         float max_xy_smoothing = m_config.get_abs_value("spiral_mode_max_xy_smoothing", nozzle_diameter);
         this->m_spiral_vase->set_max_xy_smoothing(max_xy_smoothing);
     }
@@ -7339,7 +7339,7 @@ std::string GCode::extrude_loop(
                              !m_config.spiral_mode &&
                              (loop.role() == erExternalPerimeter || (loop.role() == erPerimeter && m_config.seam_slope_inner_walls)) &&
                              layer_id() > 0;
-    const auto nozzle_diameter = EXTRUDER_CONFIG(nozzle_diameter);
+    const auto nozzle_diameter = get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id());
     if (enable_seam_slope && m_config.seam_slope_conditional.value) {
         enable_seam_slope = loop.is_smooth(m_config.scarf_angle_threshold.value * M_PI / 180., nozzle_diameter);
     }
@@ -7570,7 +7570,7 @@ std::string GCode::extrude_loop(
         Vec2d  p1 = paths.front().polyline.points.front().cast<double>();
         Vec2d  p2 = paths.front().polyline.points[1].cast<double>();
         Vec2d  v  = p2 - p1;
-        double nd = scale_(EXTRUDER_CONFIG(nozzle_diameter));
+        double nd = scale_(get_float_at(m_config, "nozzle_diameter", m_writer.extruder()->id()));
         double l2 = v.squaredNorm();
         // Shift by no more than a nozzle diameter.
         // FIXME Hiding the seams will not work nicely for very densely discretized contours!
@@ -9343,7 +9343,7 @@ std::string GCode::set_object_info(Print* print)
 // convert a model-space scaled point into G-code coordinates
 Vec2d GCode::point_to_gcode(const Point& point) const
 {
-    Vec2d extruder_offset = EXTRUDER_CONFIG(extruder_offset);
+    Vec2d extruder_offset = get_point_at(m_config, "extruder_offset", m_writer.extruder()->id());
     return unscale(point) + m_origin - extruder_offset;
 }
 
@@ -9353,7 +9353,7 @@ Point GCode::gcode_to_point(const Vec2d& point) const
     Vec2d pt = point - m_origin;
     if (const Extruder* extruder = m_writer.extruder(); extruder)
         // This function may be called at the very start from toolchange G-code when the extruder is not assigned yet.
-        pt += m_config.extruder_offset.get_at(extruder->id());
+        pt += get_point_at(m_config, "extruder_offset", extruder->id());
     return scaled<coord_t>(pt);
 }
 

@@ -2,17 +2,17 @@
 
 namespace Slic3r {
 
-FilamentVolumeType get_nozzle_volume_type(const ConfigBase &printer_config, unsigned int extruder_id)
+FilamentVolumeType get_nozzle_volume_type(const ConfigOptionResolver &printer_config, unsigned int physical_extruder_id)
 {
     const ConfigOption *option = printer_config.option("nozzle_volume_type");
     if (option == nullptr || option->type() != coEnums)
         return fvtStandard;
 
     const auto *types = static_cast<const ConfigOptionEnumsGeneric *>(option);
-    if (extruder_id >= types->values.size())
+    if (physical_extruder_id >= types->values.size())
         return fvtStandard;
 
-    const int value = types->values[extruder_id];
+    const int value = types->values[physical_extruder_id];
     return value == fvtHighFlow ? fvtHighFlow : fvtStandard;
 }
 

@@ -1609,10 +1609,13 @@ bool SelectMachineDialog::is_same_nozzle_diameters(float &tag_nozzle_diameter) c
 
     try
     {
+        // Snapmaker: filament-nozzle map -- the full config merges the map (project config) with
+        // nozzle_diameter (printer preset), so slot->extruder resolution works out of one config.
+        const DynamicPrintConfig full_config = preset_bundle->full_config();
         auto extruders = wxGetApp().plater()->get_partplate_list().get_curr_plate()->get_used_extruders();
         for (auto i = 0; i < extruders.size(); i++) {
             auto extruder = extruders[i] - 1;
-            tag_nozzle_diameter = float(opt_nozzle_diameters->get_at(extruder));
+            tag_nozzle_diameter = float(get_value_at(full_config, *opt_nozzle_diameters, "nozzle_diameter", unsigned(extruder)));
             if (tag_nozzle_diameter != obj_->m_extder_data.extders[0].current_nozzle_diameter) {
                 return false;
             }

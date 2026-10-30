@@ -8,6 +8,7 @@
 #include "Point.hpp"
 #include "PlaceholderParser.hpp"
 #include "PrintConfig.hpp"
+#include "FilamentNozzleMap.hpp"
 #include "GCode/AvoidCrossingPerimeters.hpp"
 #include "GCode/CoolingBuffer.hpp"
 #include "GCode/FanMover.hpp"
@@ -90,7 +91,14 @@ public:
         m_wipe_tower_rotation(float(print_config.wipe_tower_rotation_angle)),
         m_wipe_tower_depth(wipe_tower_depth),
         m_wipe_tower_bbx(wipe_tower_bbx),
-        m_extruder_offsets(print_config.extruder_offset.values),
+        // Snapmaker: one entry per filament slot -- the offset of the physical extruder the slot
+        // maps to. extruder_offset_at() indexes this by tool (= filament slot) id.
+        m_extruder_offsets([&print_config] {
+            std::vector<Vec2d> out(FilamentNozzleMap::filament_count(print_config));
+            for (size_t i = 0; i < out.size(); ++ i)
+                out[i] = get_point_at(print_config, "extruder_offset", unsigned(i));
+            return out;
+        }()),
         m_priming(priming),
         m_tool_changes(tool_changes),
         m_local_z_tool_changes(local_z_tool_changes),
@@ -659,7 +667,7 @@ private:
 
     // Snapmaker: flow variant — read a process-domain vector option
     template<typename VectorOption>
-    auto process_flow_value(const VectorOption &opt) const -> decltype(opt.get_at(0))
+    auto process_flow_value(const VectorOption &opt) const -> std::decay_t<decltype(opt.get_at(0))>
     {
         return get_value_at(m_config, opt, ConfigFlowDomain::Process,
                             m_writer.extruder() != nullptr ? m_writer.extruder()->id() : 0);

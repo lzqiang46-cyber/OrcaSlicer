@@ -1,3 +1,4 @@
+#include "FilamentNozzleMap.hpp"
 #include "MixedFilament.hpp"
 #include "Model.hpp"
 #include "Print.hpp"
@@ -229,6 +230,50 @@ static inline bool config_options_equal(const ConfigOption *lhs, const ConfigOpt
     return *lhs == *rhs;
 }
 
+// Result of merging a filament-level retract override over its machine array.
+struct RetractOverrideMerge {
+    ConfigOption *merged    = nullptr; // effective array: machine values re-mapped, non-nil overrides applied; owned by the caller
+    bool          overriden = false;   // the override array carries at least one non-nil value
+    bool          changed   = false;   // the effective array differs from the previously applied one
+};
+
+// Merge a filament-level retract override ("filament_retraction_length" and friends) over its
+// machine array ("retraction_length" and friends): nil positions of the override inherit the
+// machine value of the physical extruder the position maps to, non-nil positions keep their
+// override. The position axis follows the key: flow-variant keys resolve variant-expanded
+// positions, plain keys resolve filament slots. print_config_diffs() must run this on every
+// apply and diff the result against the previously applied array -- skipping it while the raw
+// machine array is unchanged keeps the previous extruder order alive when only
+// filament_nozzle_map flipped.
+RetractOverrideMerge merge_retract_override(const ConfigOptionResolver &config, const std::string &filament_key,
+                                            const ConfigOption *machine, const ConfigOption *filament_override,
+                                            const ConfigOption *current_effective)
+{
+    assert(machine != nullptr && filament_override != nullptr);
+
+    const auto         *filament     = static_cast<const ConfigOptionVectorBase*>(filament_override);
+    const auto         *machine_vec  = static_cast<const ConfigOptionVectorBase*>(machine);
+    const size_t        machine_size = machine_vec->size();
+    const bool          variant_axis = is_filament_flow_variant_option(filament_key);
+
+    // Machine index inherited by each nil position of the filament vector.
+    std::vector<size_t> fallback_indices;
+    fallback_indices.reserve(filament->size());
+    for (size_t pos = 0; pos < filament->size(); ++pos) {
+        const size_t extruder = variant_axis ?
+            FilamentNozzleMap::physical_extruder_for_variant_position(config, pos) :
+            FilamentNozzleMap::physical_extruder_for_filament(config, unsigned(pos));
+        fallback_indices.emplace_back(machine_size == 0 ? 0 : std::min(extruder, machine_size - 1));
+    }
+
+    RetractOverrideMerge out;
+    out.merged    = machine->clone();
+    out.merged->apply_override(filament_override, &fallback_indices);
+    out.overriden = ! filament_override->is_nil();
+    out.changed   = ! config_options_equal(current_effective, out.merged);
+    return out;
+}
+
 static t_config_option_keys print_config_diffs(
     const PrintConfig        &current_config,
     const DynamicPrintConfig &new_full_config,
@@ -254,26 +299,29 @@ static t_config_option_keys print_config_diffs(
         // const ConfigOption *opt_new_filament = std::binary_search(extruder_retract_keys.begin(), extruder_retract_keys.end(), opt_key) ? new_full_config.option(filament_prefix + opt_key) : nullptr;
         const ConfigOption* opt_new_filament = (iter == extruder_retract_keys.end()) ? nullptr :
                                                                                        new_full_config.option(filament_prefix + opt_key);
-        if (opt_new_filament != nullptr && ! opt_new_filament->is_nil()) {
+        if (opt_new_filament != nullptr) {
             // An extruder retract override is available at some of the filament presets.
-            bool overriden = opt_new->overriden_by(opt_new_filament);
-            if (overriden || !config_options_equal(opt_old, opt_new)) {
-                auto opt_copy = opt_new->clone();
-                if (!((opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
-                    && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament)) // ugly code, remove it later if firmware supports
-                    opt_copy->apply_override(opt_new_filament);
-                bool changed = !config_options_equal(opt_old, opt_copy);
-                if (changed)
+            const bool override_gated = (opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
+                                     && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament; // ugly code, remove it later if firmware supports
+            if (override_gated) {
+                // The filament-level gate is off: keep machine semantics, ignore the overrides.
+                if (!config_options_equal(opt_old, opt_new))
                     print_diff.emplace_back(opt_key);
-                if (changed || overriden) {
-                    if ((opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
-                        && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament)
-                        continue;
-                    // filament_overrides will be applied to the placeholder parser, which layers these parameters over full_print_config.
-                    filament_overrides.set_key_value(opt_key, opt_copy);
-                } else
-                    delete opt_copy;
+                continue;
             }
+            // The effective array is rebuilt on every apply and diffed against the previously
+            // applied one. It must not be skipped while the raw machine array is unchanged:
+            // with all overrides nil and the old effective array equal to the machine array,
+            // a bare filament_nozzle_map change has no other chance to re-derive the slots.
+            RetractOverrideMerge merge = merge_retract_override(
+                new_full_config, filament_prefix + opt_key, opt_new, opt_new_filament, opt_old);
+            if (merge.changed)
+                print_diff.emplace_back(opt_key);
+            if (merge.changed || merge.overriden) {
+                // filament_overrides will be applied to the placeholder parser, which layers these parameters over full_print_config.
+                filament_overrides.set_key_value(opt_key, merge.merged);
+            } else
+                delete merge.merged;
         } else if (!config_options_equal(opt_new, opt_old)) {
             //BBS: add plate_index logic for wipe_tower_x/wipe_tower_y
             if (!opt_key.compare("wipe_tower_x") || !opt_key.compare("wipe_tower_y")) {

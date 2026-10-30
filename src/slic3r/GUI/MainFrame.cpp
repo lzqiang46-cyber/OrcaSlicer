@@ -1772,7 +1772,10 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_slice_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
-            if (GUI::FlowType::any_nozzle_high_flow()) {
+            if (GUI::FlowType::filament_nozzle_map_active()) {
+                // With an active filament-nozzle map the flow types follow the map; no grouping dialog.
+                GUI::FlowType::sync_filament_volume_types_from_nozzle_map();
+            } else if (GUI::FlowType::any_nozzle_high_flow()) {
                 bool all_high_flow = GUI::FlowType::distinct_nozzle_flow_type_count() < 2;
                 GUI::FilamentGroupDialog dlg(this, all_high_flow);
                 if (dlg.ShowModal() != wxID_OK)
